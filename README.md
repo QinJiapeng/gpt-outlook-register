@@ -38,6 +38,8 @@ pip install -r requirements.txt
 python start_webui.py
 # 浏览器自动打开 http://127.0.0.1:8765/
 ```
+公网启动
+python start_webui.py --host 0.0.0.0 --port 8765
 
 #### 已有项目，安全升级（不丢数据）
 ```bash
