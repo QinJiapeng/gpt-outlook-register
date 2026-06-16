@@ -1,4 +1,4 @@
-// WebUI 交互逻辑
+// 团子喵的 WebUI 交互逻辑 ~
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
@@ -1078,6 +1078,7 @@ async function loadSmsConfig() {
     _renderSmsAllowedCountriesBox(config.sms_allowed_countries || "");
     $("#smsMaxPhoneAttempts").value = config.sms_max_phone_attempts || "";
     $("#smsPerPhoneTimeout").value = config.sms_per_phone_timeout || "80";
+    $("#smsProxy").value = config.sms_proxy || "";
   } catch (e) {
     console.error("loadSmsConfig:", e);
   }
@@ -1107,6 +1108,7 @@ $("#btnSaveSmsCfg").addEventListener("click", async () => {
     sms_auto_max_price:    $("#smsAutoMaxPrice").value.trim(),
     sms_max_phone_attempts: $("#smsMaxPhoneAttempts").value.trim(),
     sms_per_phone_timeout: $("#smsPerPhoneTimeout").value.trim() || "80",
+    sms_proxy:             $("#smsProxy").value.trim(),
   };
   try {
     await api("/api/settings/sms", { method: "POST", body: JSON.stringify(body) });

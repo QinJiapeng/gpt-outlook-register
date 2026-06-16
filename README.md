@@ -14,13 +14,12 @@
 
 ## 📰 最近更新（2026-06）
 
-- 🔧 **v0.4.0（2026-06-16）**
-  - 移除接码 API 出口代理配置（简化配置流程，接码 API 直连）
 - 📱 **SMS 接码集成（解决 add-phone 拿不到 refresh_token 的问题）**
-  - 「📱 接码配置」Tab 一键启用：SmsBower平台
+  - 「📱 接码配置」Tab 一键启用：HeroSMS / SmsBower / SMS-Activate 三家平台
   - 命中 `add-phone` 时自动租号 → 接 SMS → 验证，**全程无人值守**
-  - 支持 **号码复用**（SmsBower：一个号注册多个 ChatGPT，省钱）
+  - 支持 **号码复用**（HeroSMS / SmsBower：一个号注册多个 ChatGPT，省钱）
   - 支持 **自动选最优国家**（按价格 + 库存）
+  - 内置「OpenAI 走 SMS 国家白名单」（截至 2026 实测：**目前只有泰国 country_id=52 稳定可用**，其它国家可能抽到 WhatsApp 号）
   - WebUI 提供「测试余额」「查询国家排名」按钮
   - 兼容旧的 `OPENAI_PHONE_NUMBER` / `OPENAI_PHONE_OTP` 环境变量路径（未启用接码时自动回退）
 - ✨ **CF Temp Email 自建邮箱支持**

@@ -584,6 +584,7 @@ def get_sms_config() -> dict:
     sms_auto_country:   '0'/'1' 自动选最优国家（按价格 + 库存）
     sms_auto_min_stock: 自动选国家最低库存（默认 20）
     sms_auto_max_price: 自动选国家最高单价（默认 0 = 不限）
+    sms_proxy:          接码 API 出口代理（空则用全局代理）
     """
     return {
         "sms_enabled":             get_setting("sms_enabled", "0"),
@@ -601,6 +602,7 @@ def get_sms_config() -> dict:
         "sms_auto_max_price":      get_setting("sms_auto_max_price", ""),
         "sms_max_phone_attempts":  get_setting("sms_max_phone_attempts", ""),
         "sms_per_phone_timeout":   get_setting("sms_per_phone_timeout", "80"),
+        "sms_proxy":               get_setting("sms_proxy", ""),
     }
 
 
@@ -619,6 +621,7 @@ def save_sms_config(data: dict) -> None:
         "sms_phone_success_max", "sms_auto_min_stock", "sms_auto_max_price",
         "sms_max_phone_attempts", "sms_per_phone_timeout",
         "sms_allowed_countries",
+        "sms_proxy",
     ):
         if key in data:
             set_setting(key, str(data[key]).strip())
@@ -654,6 +657,7 @@ def get_sms_internal_config() -> dict:
         "sms_auto_max_price":      get_setting("sms_auto_max_price", ""),
         "sms_max_phone_attempts":  get_setting("sms_max_phone_attempts", ""),
         "sms_per_phone_timeout":   get_setting("sms_per_phone_timeout", "80"),
+        "sms_proxy":               get_setting("sms_proxy", ""),
     }
 
 

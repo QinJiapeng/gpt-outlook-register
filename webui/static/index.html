@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>GPT Outlook Register · WebUI</title>
+<title>GPT Outlook Register · 团子喵 WebUI</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -303,6 +303,10 @@
             失败时立刻 cancel 当前号 + 换新号继续，不浪费时间。
           </p>
         </fieldset>
+
+        <label>接码 API 出口代理 <small>（空 = 用全局代理；接码 API 大多在国外，国内可能要走代理）</small>
+          <input id="smsProxy" placeholder="socks5://user:pass@host:port">
+        </label>
 
         <div class="row">
           <button id="btnSaveSmsCfg" class="primary">💾 保存配置</button>

@@ -232,6 +232,7 @@ class SmsBowerProvider(BaseSmsProvider):
         default_service: str = SMS_DEFAULT_SERVICE,
         default_country: str = SMS_DEFAULT_COUNTRY,
         max_price: float = -1,
+        proxy: Optional[str] = None,
         reuse_phone_to_max: bool = True,
         phone_success_max: int = 3,
     ):
@@ -239,6 +240,8 @@ class SmsBowerProvider(BaseSmsProvider):
         self.default_service = str(default_service or SMS_DEFAULT_SERVICE).strip()
         self.default_country = str(default_country or SMS_DEFAULT_COUNTRY).strip()
         self.max_price = float(max_price or -1)
+        self._proxy = (proxy or "").strip() or None
+        self._proxies = {"http": self._proxy, "https": self._proxy} if self._proxy else None
         self.reuse_phone_to_max = bool(reuse_phone_to_max)
         self.phone_success_max = max(0, int(phone_success_max or 0))
         self._resend_callback: Optional[Callable[[], None]] = None
@@ -251,7 +254,7 @@ class SmsBowerProvider(BaseSmsProvider):
         payload = dict(params)
         if needs_key:
             payload["api_key"] = self.api_key
-        resp = requests.get(self.BASE_URL, params=payload, timeout=timeout)
+        resp = requests.get(self.BASE_URL, params=payload, timeout=timeout, proxies=self._proxies)
         resp.raise_for_status()
         return resp
 
@@ -809,7 +812,7 @@ def create_sms_provider(provider_key: str, config: dict) -> BaseSmsProvider:
 
     provider_key: smsbower / smsbower
     config 字段：sms_api_key / sms_country / sms_service / sms_max_price /
-                sms_reuse_phone / sms_phone_success_max
+                sms_proxy / sms_reuse_phone / sms_phone_success_max
     """
     pk = (provider_key or "").lower().strip()
     api_key = str(config.get("sms_api_key") or "").strip()
@@ -817,6 +820,7 @@ def create_sms_provider(provider_key: str, config: dict) -> BaseSmsProvider:
         raise RuntimeError(f"{pk} 未配置 API Key")
     country = str(config.get("sms_country") or "").strip()
     service = str(config.get("sms_service") or "").strip() or "dr"
+    proxy = (str(config.get("sms_proxy") or config.get("proxy") or "")).strip() or None
     max_price = _safe_float(config.get("sms_max_price"), -1)
     reuse = _safe_bool(config.get("sms_reuse_phone"), True)
     succ_max = max(0, _safe_int(config.get("sms_phone_success_max"), 3))
@@ -826,6 +830,7 @@ def create_sms_provider(provider_key: str, config: dict) -> BaseSmsProvider:
                                 default_service=service,
                                 default_country=country or SMS_DEFAULT_COUNTRY,
                                 max_price=max_price,
+                                proxy=proxy,
                                 reuse_phone_to_max=reuse,
                                 phone_success_max=succ_max)
     raise RuntimeError(f"未知接码服务: {provider_key}")

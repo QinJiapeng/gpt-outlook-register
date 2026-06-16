@@ -425,6 +425,7 @@ class SaveSmsConfigReq(BaseModel):
     sms_auto_max_price: Optional[str] = None
     sms_max_phone_attempts: Optional[str] = None   # 空 = 用 provider 默认；>0 = 自定义
     sms_per_phone_timeout: Optional[str] = None    # 单号等待秒数（默认 80）
+    sms_proxy: Optional[str] = None
 
 
 @app.post("/api/settings/sms")
