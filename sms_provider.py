@@ -812,7 +812,7 @@ def create_sms_provider(provider_key: str, config: dict) -> BaseSmsProvider:
 
     provider_key: smsbower / smsbower
     config 字段：sms_api_key / sms_country / sms_service / sms_max_price /
-                sms_proxy / sms_reuse_phone / sms_phone_success_max
+                sms_reuse_phone / sms_phone_success_max
     """
     pk = (provider_key or "").lower().strip()
     api_key = str(config.get("sms_api_key") or "").strip()
@@ -820,6 +820,8 @@ def create_sms_provider(provider_key: str, config: dict) -> BaseSmsProvider:
         raise RuntimeError(f"{pk} 未配置 API Key")
     country = str(config.get("sms_country") or "").strip()
     service = str(config.get("sms_service") or "").strip() or "dr"
+    # 接码 API 请求走的代理：复用全局 proxy（registrar 注入注册流程的代理），
+    # 也允许调用方显式传 sms_proxy 覆盖（保留扩展点，目前 WebUI 不暴露）。
     proxy = (str(config.get("sms_proxy") or config.get("proxy") or "")).strip() or None
     max_price = _safe_float(config.get("sms_max_price"), -1)
     reuse = _safe_bool(config.get("sms_reuse_phone"), True)

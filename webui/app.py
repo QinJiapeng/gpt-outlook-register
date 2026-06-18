@@ -8,13 +8,10 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
-import re
 import sys
 import time
-import zipfile
 from pathlib import Path
 from typing import Optional
 
@@ -28,7 +25,6 @@ sys.path.insert(0, str(ROOT))
 
 from . import db, registrar  # noqa: E402
 from .auto_loop import CONTROLLER as AUTO_LOOP  # noqa: E402
-from .refetch_rt import refetch_refresh_token  # noqa: E402
 
 # 启动时自动释放卡死的 in_use 号（上次进程崩溃 / 强退留下的）
 try:
@@ -241,37 +237,6 @@ def api_registered(limit: int = 500):
     return {"ok": True, "items": db.list_registered(limit=limit)}
 
 
-@app.get("/api/registered/export")
-def api_registered_export(limit: int = 5000):
-    """批量导出：每个号一个 JSON 打包成 ZIP 下载。"""
-    items = db.list_registered_full(limit=limit)
-    buf = io.BytesIO()
-    safe_re = re.compile(r"[^A-Za-z0-9._@-]")
-    used_names: set[str] = set()
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for item in items:
-            email = (item.get("email") or "unknown").strip()
-            base = safe_re.sub("_", email) or "unknown"
-            name = f"{base}.json"
-            # 同名去重（理论上 email 唯一就够，但保险）
-            i = 2
-            while name in used_names:
-                name = f"{base}_{i}.json"
-                i += 1
-            used_names.add(name)
-            zf.writestr(name, json.dumps(item, ensure_ascii=False, indent=2))
-    buf.seek(0)
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    return StreamingResponse(
-        iter([buf.getvalue()]),
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="gpt-accounts-{ts}.zip"',
-            "X-Account-Count": str(len(items)),
-        },
-    )
-
-
 @app.get("/api/registered/{email}")
 def api_registered_one(email: str):
     row = db.get_registered(email)
@@ -302,52 +267,6 @@ def api_bulk_delete_registered(req: BulkDeleteRegisteredReq):
         n = db.delete_registered_by_emails(req.emails)
         return {"ok": True, "deleted": n, "by": "emails"}
     raise HTTPException(400, "需要 emails 或 all=true")
-
-
-class RefetchRtReq(BaseModel):
-    email: str
-    proxy: str = ""
-    force: bool = False
-
-
-@app.post("/api/registered/refetch_rt")
-def api_refetch_rt(req: RefetchRtReq):
-    """对已注册号重新走一次 Codex OAuth 拿 refresh_token。
-
-    force=False（默认）：已有 RT 直接跳过
-    force=True：即使有 RT 也强制再拿一次（覆盖旧 RT）
-    """
-    result = refetch_refresh_token(req.email, proxy=(req.proxy or None), force=req.force)
-    return {"ok": result.get("ok", False), **result}
-
-
-class BulkRefetchRtReq(BaseModel):
-    emails: list[str]
-    proxy: str = ""
-    force: bool = False
-
-
-@app.post("/api/registered/bulk_refetch_rt")
-def api_bulk_refetch_rt(req: BulkRefetchRtReq):
-    """批量重试 refresh_token。串行跑（每个号 ~10s）。已有 RT 的号会自动跳过（除非 force=true）。"""
-    results = []
-    for email in req.emails:
-        try:
-            r = refetch_refresh_token(email, proxy=(req.proxy or None), force=req.force)
-        except Exception as e:
-            r = {"ok": False, "error": str(e)}
-        results.append({"email": email, **r})
-    ok_count = sum(1 for r in results if r.get("ok"))
-    skipped = sum(1 for r in results if r.get("skipped"))
-    new_got = ok_count - skipped
-    return {
-        "ok": True,
-        "total": len(results),
-        "succeeded": ok_count,
-        "newly_got": new_got,
-        "skipped": skipped,
-        "results": results,
-    }
 
 
 # ──────────────────────── 邮箱来源配置 ────────────────────────
@@ -425,7 +344,6 @@ class SaveSmsConfigReq(BaseModel):
     sms_auto_max_price: Optional[str] = None
     sms_max_phone_attempts: Optional[str] = None   # 空 = 用 provider 默认；>0 = 自定义
     sms_per_phone_timeout: Optional[str] = None    # 单号等待秒数（默认 80）
-    sms_proxy: Optional[str] = None
 
 
 @app.post("/api/settings/sms")
@@ -504,6 +422,96 @@ def api_sms_all_countries():
         for cid, name in items
     ]
     return {"ok": True, "countries": countries, "openai_sms_safe": list(OPENAI_SMS_COUNTRIES)}
+
+
+# ──────────────────────── 自动导出 (CPA / SUB2API) ────────────────────────
+
+
+class SaveExportConfigReq(BaseModel):
+    # CPA
+    cpa_enabled: Optional[str] = None       # "0" / "1"
+    cpa_url: Optional[str] = None
+    cpa_mgmt_key: Optional[str] = None      # 传 '***' 表示不修改
+    cpa_timeout: Optional[str] = None
+    # SUB2API
+    sub2api_enabled: Optional[str] = None
+    sub2api_url: Optional[str] = None
+    sub2api_api_key: Optional[str] = None   # '***' 不修改
+    sub2api_group_ids: Optional[str] = None  # 逗号分隔，例 "2" 或 "1,2,3"
+    sub2api_timeout: Optional[str] = None
+
+
+@app.get("/api/settings/export")
+def api_get_export_config():
+    return {"ok": True, "config": db.get_export_config()}
+
+
+@app.post("/api/settings/export")
+def api_save_export_config(req: SaveExportConfigReq):
+    db.save_export_config(req.model_dump(exclude_none=True))
+    return {"ok": True, "config": db.get_export_config()}
+
+
+class TestExportReq(BaseModel):
+    target: str = Field(..., description="cpa 或 sub2api")
+
+
+@app.post("/api/settings/export/test")
+def api_test_export(req: TestExportReq):
+    """测试 CPA / SUB2API 连通性。"""
+    from . import exporter
+    cfg = db.get_export_internal_config()
+    target = (req.target or "").strip().lower()
+    try:
+        if target == "cpa":
+            return exporter.test_cpa(cfg["cpa"])
+        if target == "sub2api":
+            return exporter.test_sub2api(cfg["sub2api"])
+        raise HTTPException(400, f"未知 target: {target}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"测试失败: {e}")
+
+
+class ManualExportReq(BaseModel):
+    email: str = Field(..., description="要导出的已注册账号邮箱")
+    targets: list[str] = Field(default_factory=lambda: ["cpa", "sub2api"],
+                                description="选择导出目标：cpa / sub2api")
+
+
+@app.post("/api/registered/export_to_panel")
+def api_manual_export_to_panel(req: ManualExportReq):
+    """对一个已注册账号手动触发到面板的导出。
+
+    targets 里选 cpa / sub2api 之一或全部。即使总开关未启用，本接口也会执行
+    （只要 URL/密钥 等基础配置已填）。
+    """
+    from . import exporter
+    cred = db.get_registered(req.email)
+    if not cred:
+        raise HTTPException(404, f"未找到已注册账号: {req.email}")
+
+    cfg = db.get_export_internal_config()
+    out = {"email": req.email, "cpa": None, "sub2api": None}
+    targets = {t.strip().lower() for t in (req.targets or []) if t}
+
+    if "cpa" in targets:
+        cpa_cfg = dict(cfg["cpa"])
+        cpa_cfg["enabled"] = True  # 手动触发：强制启用
+        try:
+            out["cpa"] = exporter.export_to_cpa(cred, cpa_cfg)
+        except Exception as e:
+            out["cpa"] = {"ok": False, "error": str(e)}
+    if "sub2api" in targets:
+        sub2api_cfg = dict(cfg["sub2api"])
+        sub2api_cfg["enabled"] = True
+        try:
+            out["sub2api"] = exporter.export_to_sub2api(cred, sub2api_cfg)
+        except Exception as e:
+            out["sub2api"] = {"ok": False, "error": str(e)}
+
+    return {"ok": True, **out}
 
 
 # ──────────────────────── auto-loop ────────────────────────

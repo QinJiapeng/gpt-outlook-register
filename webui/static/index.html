@@ -96,6 +96,7 @@
       <button class="tab" data-tab="runs">运行记录</button>
       <button class="tab" data-tab="mailcfg">📧 邮箱配置</button>
       <button class="tab" data-tab="smscfg">📱 接码配置</button>
+      <button class="tab" data-tab="exportcfg">📤 自动导出</button>
     </div>
 
     <div class="tab-content" id="tab-pool">
@@ -146,10 +147,8 @@
         <label class="check">
           <input type="radio" name="regFilter" value="no_rt"> 无 RT
         </label>
-        <button id="btnExportAll" title="把所有注册结果的完整凭证导出为 JSON 文件">📦 批量导出全部</button>
         <button id="btnDeleteSelectedReg" title="删除已勾选的凭证" disabled>🗑️ 删除选中 (<span id="selCountReg">0</span>)</button>
         <button id="btnDeleteAllReg" title="清空所有注册结果（危险）">💥 清空全部</button>
-        <button id="btnBulkRefetchRt" title="对选中号串行重走 Codex OAuth 拿 refresh_token" disabled>🔑 重拿选中 RT</button>
         <span id="exportResult" class="result"></span>
       </div>
       <table id="regTable">
@@ -304,14 +303,84 @@
           </p>
         </fieldset>
 
-        <label>接码 API 出口代理 <small>（空 = 用全局代理；接码 API 大多在国外，国内可能要走代理）</small>
-          <input id="smsProxy" placeholder="socks5://user:pass@host:port">
-        </label>
-
         <div class="row">
           <button id="btnSaveSmsCfg" class="primary">💾 保存配置</button>
           <button id="btnTestSms">🔌 测试余额</button>
           <span id="smsCfgResult" class="result"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content hidden" id="tab-exportcfg">
+      <h3 style="margin:0 0 12px;color:var(--pink-dark)">📤 注册完成后自动导出</h3>
+      <p class="hint">
+        勾选启用后，每次注册成功并落库后，会把凭证导出到对应的面板。<br>
+        ⚠️ <b>没勾选时完全不执行</b>，不影响原有注册流程。
+        导出失败只记日志，不会让注册算 failed。
+      </p>
+
+      <div class="form">
+
+        <!-- ── CPA ── -->
+        <fieldset>
+          <legend>🅰️ CPA 面板</legend>
+          <label class="check">
+            <input type="checkbox" id="cpaEnabled">
+            <b>启用 CPA 自动导出</b>
+            <small>（POST /v0/management/auth-files，导入 codex auth JSON）</small>
+          </label>
+
+          <label>CPA URL <small>（面板基地址，如 https://cpa.example.com）</small>
+            <input id="cpaUrl" placeholder="https://cpa.example.com">
+          </label>
+          <label>管理密钥 <small>（Authorization Bearer + X-Management-Key）</small>
+            <input id="cpaMgmtKey" placeholder="留空表示不修改（已设置）" type="password">
+          </label>
+
+          <label>超时 (秒)
+            <input id="cpaTimeout" type="number" min="5" max="300" placeholder="30">
+          </label>
+
+          <div class="row">
+            <button id="btnTestCpa">🔌 测试 CPA 连通性</button>
+            <span id="cpaTestResult" class="result"></span>
+          </div>
+        </fieldset>
+
+        <!-- ── SUB2API ── -->
+        <fieldset>
+          <legend>🅱️ SUB2API 订阅 API 管理面板</legend>
+          <label class="check">
+            <input type="checkbox" id="sub2apiEnabled">
+            <b>启用 SUB2API 自动导出</b>
+            <small>（POST /api/v1/admin/accounts，x-api-key 鉴权）</small>
+          </label>
+
+          <label>SUB2API URL
+            <input id="sub2apiUrl" placeholder="https://sub2api.example.com">
+          </label>
+
+          <label>API Key <small>（面板里生成的 x-api-key）</small>
+            <input id="sub2apiApiKey" placeholder="留空表示不修改（已设置）" type="password">
+          </label>
+
+          <label>分组 IDs <small>（逗号分隔，例如 "2" 或 "1,2,3"，默认 2）</small>
+            <input id="sub2apiGroupIds" placeholder="2">
+          </label>
+
+          <label>超时 (秒)
+            <input id="sub2apiTimeout" type="number" min="5" max="300" placeholder="30">
+          </label>
+
+          <div class="row">
+            <button id="btnTestSub2api">🔌 测试 SUB2API 连通性</button>
+            <span id="sub2apiTestResult" class="result"></span>
+          </div>
+        </fieldset>
+
+        <div class="row">
+          <button id="btnSaveExportCfg" class="primary">💾 保存配置</button>
+          <span id="exportCfgResult" class="result"></span>
         </div>
       </div>
     </div>

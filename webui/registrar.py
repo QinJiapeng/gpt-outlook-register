@@ -241,6 +241,9 @@ def _do_register(
         if mail_source != "cf_temp":
             db.mark_done(email)
 
+        # ─ 可选：导出到 CPA / SUB2API 面板（仅勾选启用时才执行） ─
+        _try_export_to_panels(run_id, d)
+
         result_summary = {
             "email": d.get("email"),
             "access_token_len": len(d.get("access_token") or ""),
@@ -290,6 +293,64 @@ def _do_register(
         q = _run_queues.get(run_id)
         if q is not None:
             q.put(None)  # sentinel: 流结束
+
+
+def _try_export_to_panels(run_id: str, cred: dict) -> None:
+    """注册完成后可选地把凭证导出到 CPA / SUB2API 面板。
+
+    - 任一目标的"启用"开关关闭时,该目标跳过(不发请求);两者都未启用时整段 no-op。
+    - 任何异常都不抛,只 emit 日志/状态(不影响注册主流程)。
+    """
+    try:
+        cfg = db.get_export_internal_config()
+    except Exception as e:
+        logging.getLogger("registrar").warning(f"[export] 读取配置失败: {e}")
+        return
+
+    cpa_enabled = bool(cfg.get("cpa", {}).get("enabled"))
+    sub2api_enabled = bool(cfg.get("sub2api", {}).get("enabled"))
+    if not (cpa_enabled or sub2api_enabled):
+        return  # 用户没勾选任何目标 → 完全不执行
+
+    from . import exporter  # 懒 import,避免未启用时强依赖
+
+    explog = logging.getLogger("registrar")
+
+    def _log(msg: str, level: str = "info") -> None:
+        if level == "error":
+            explog.error(f"[export] {msg}")
+        elif level == "warn":
+            explog.warning(f"[export] {msg}")
+        else:
+            explog.info(f"[export] {msg}")
+        try:
+            _emit_status(run_id, "phase", {"phase": "export", "message": msg, "level": level})
+        except Exception:
+            pass
+
+    try:
+        results = exporter.run_exports(
+            cred,
+            cpa_cfg=cfg.get("cpa") if cpa_enabled else None,
+            sub2api_cfg=cfg.get("sub2api") if sub2api_enabled else None,
+            log_fn=_log,
+        )
+    except Exception as e:
+        _log(f"导出整体异常: {e}", "error")
+        return
+
+    # 汇总成一个事件给前端
+    summary = {}
+    if results.get("cpa") is not None:
+        summary["cpa"] = {"ok": bool(results["cpa"].get("ok")),
+                          "message": results["cpa"].get("message") or results["cpa"].get("error") or ""}
+    if results.get("sub2api") is not None:
+        summary["sub2api"] = {"ok": bool(results["sub2api"].get("ok")),
+                              "message": results["sub2api"].get("message") or results["sub2api"].get("error") or ""}
+    try:
+        _emit_status(run_id, "phase", {"phase": "export_done", "summary": summary})
+    except Exception:
+        pass
 
 
 def _build_sms_callback(run_id: str) -> Optional[PhoneCallbackController]:

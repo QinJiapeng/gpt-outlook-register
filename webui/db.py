@@ -584,7 +584,6 @@ def get_sms_config() -> dict:
     sms_auto_country:   '0'/'1' 自动选最优国家（按价格 + 库存）
     sms_auto_min_stock: 自动选国家最低库存（默认 20）
     sms_auto_max_price: 自动选国家最高单价（默认 0 = 不限）
-    sms_proxy:          接码 API 出口代理（空则用全局代理）
     """
     return {
         "sms_enabled":             get_setting("sms_enabled", "0"),
@@ -602,7 +601,6 @@ def get_sms_config() -> dict:
         "sms_auto_max_price":      get_setting("sms_auto_max_price", ""),
         "sms_max_phone_attempts":  get_setting("sms_max_phone_attempts", ""),
         "sms_per_phone_timeout":   get_setting("sms_per_phone_timeout", "80"),
-        "sms_proxy":               get_setting("sms_proxy", ""),
     }
 
 
@@ -621,7 +619,6 @@ def save_sms_config(data: dict) -> None:
         "sms_phone_success_max", "sms_auto_min_stock", "sms_auto_max_price",
         "sms_max_phone_attempts", "sms_per_phone_timeout",
         "sms_allowed_countries",
-        "sms_proxy",
     ):
         if key in data:
             set_setting(key, str(data[key]).strip())
@@ -640,7 +637,7 @@ def save_sms_config(data: dict) -> None:
 
 
 def get_sms_internal_config() -> dict:
-    """内部用：拿明文 sms_api_key，供 sms_provider 实例化使用。"""
+    """内部用：拿明文 sms_api_key,供 sms_provider 实例化使用。"""
     return {
         "sms_enabled":             get_setting("sms_enabled", "0") in ("1", "true"),
         "sms_provider":            get_setting("sms_provider", "smsbower"),
@@ -657,8 +654,84 @@ def get_sms_internal_config() -> dict:
         "sms_auto_max_price":      get_setting("sms_auto_max_price", ""),
         "sms_max_phone_attempts":  get_setting("sms_max_phone_attempts", ""),
         "sms_per_phone_timeout":   get_setting("sms_per_phone_timeout", "80"),
-        "sms_proxy":               get_setting("sms_proxy", ""),
     }
+
+
+# ──────────────────────── 自动导出配置 (CPA / SUB2API) ────────────────────────
+
+
+def get_export_config() -> dict:
+    """返回导出配置（敏感字段做明文/'***' 占位）。
+
+    给前端展示用：
+      cpa_mgmt_key / sub2api_api_key 已设置时返回 '***'，未设置返回 ''。
+      保存时传 '***' 代表不修改。
+    """
+    return {
+        # CPA
+        "cpa_enabled":     get_setting("export_cpa_enabled", "0"),
+        "cpa_url":         get_setting("export_cpa_url", ""),
+        "cpa_mgmt_key":    "***" if get_setting("export_cpa_mgmt_key") else "",
+        "cpa_timeout":     get_setting("export_cpa_timeout", "30"),
+        # SUB2API
+        "sub2api_enabled":    get_setting("export_sub2api_enabled", "0"),
+        "sub2api_url":        get_setting("export_sub2api_url", ""),
+        "sub2api_api_key":    "***" if get_setting("export_sub2api_api_key") else "",
+        "sub2api_group_ids":  get_setting("export_sub2api_group_ids", "2"),
+        "sub2api_timeout":    get_setting("export_sub2api_timeout", "30"),
+    }
+
+
+def save_export_config(data: dict) -> None:
+    """保存导出配置。密文字段传 '***' 表示不修改。"""
+    # 布尔开关
+    for key_in, key_out in (
+        ("cpa_enabled",     "export_cpa_enabled"),
+        ("sub2api_enabled", "export_sub2api_enabled"),
+    ):
+        if key_in in data:
+            v = data[key_in]
+            if isinstance(v, bool):
+                set_setting(key_out, "1" if v else "0")
+            else:
+                s = str(v).strip().lower()
+                set_setting(key_out, "1" if s in ("1", "true", "yes", "on") else "0")
+    # 字符串字段（明文）
+    for key_in, key_out in (
+        ("cpa_url",            "export_cpa_url"),
+        ("cpa_timeout",        "export_cpa_timeout"),
+        ("sub2api_url",        "export_sub2api_url"),
+        ("sub2api_group_ids",  "export_sub2api_group_ids"),
+        ("sub2api_timeout",    "export_sub2api_timeout"),
+    ):
+        if key_in in data:
+            set_setting(key_out, str(data[key_in] or "").strip())
+    # 密文字段（'***' 不修改）
+    if data.get("cpa_mgmt_key") and data["cpa_mgmt_key"] != "***":
+        set_setting("export_cpa_mgmt_key", str(data["cpa_mgmt_key"]).strip())
+    if data.get("sub2api_api_key") and data["sub2api_api_key"] != "***":
+        set_setting("export_sub2api_api_key", str(data["sub2api_api_key"]).strip())
+
+
+def get_export_internal_config() -> dict:
+    """内部用：拿明文密钥 + 解析后的 enabled 布尔。供 registrar / app.test 调用。
+
+    返回两个子配置 dict，可分别传给 exporter.export_to_cpa / export_to_sub2api。
+    """
+    cpa = {
+        "enabled":      get_setting("export_cpa_enabled", "0") in ("1", "true"),
+        "cpa_url":      get_setting("export_cpa_url", ""),
+        "cpa_mgmt_key": get_setting("export_cpa_mgmt_key", ""),
+        "cpa_timeout":  get_setting("export_cpa_timeout", "30"),
+    }
+    sub2api = {
+        "enabled":            get_setting("export_sub2api_enabled", "0") in ("1", "true"),
+        "sub2api_url":        get_setting("export_sub2api_url", ""),
+        "sub2api_api_key":    get_setting("export_sub2api_api_key", ""),
+        "sub2api_group_ids":  get_setting("export_sub2api_group_ids", "2"),
+        "sub2api_timeout":    get_setting("export_sub2api_timeout", "30"),
+    }
+    return {"cpa": cpa, "sub2api": sub2api}
 
 
 # 模块加载时自动建表

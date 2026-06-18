@@ -196,6 +196,7 @@ $$(".tab").forEach((t) => {
     if (t.dataset.tab === "runs") refreshRuns();
     if (t.dataset.tab === "mailcfg") loadMailConfig();
     if (t.dataset.tab === "smscfg") loadSmsConfig();
+    if (t.dataset.tab === "exportcfg") loadExportConfig();
   });
 });
 
@@ -397,7 +398,6 @@ async function refreshRegistered() {
       <td>${fmtTime(r.created_at)}</td>
       <td>
         <button data-act="view" data-email="${r.email}">查看凭证</button>
-        <button data-act="refetch_rt" data-email="${r.email}" title="重新走 Codex OAuth 拿 refresh_token">🔑 RT</button>
         <button data-act="del" data-email="${r.email}">删除</button>
       </td>
     `;
@@ -422,7 +422,6 @@ function _updateSelCountReg() {
   const n = _selectedRegEmails().length;
   $("#selCountReg").textContent = n;
   $("#btnDeleteSelectedReg").disabled = n === 0;
-  $("#btnBulkRefetchRt").disabled = n === 0;
 }
 $("#regTable").addEventListener("change", (e) => {
   if (e.target.classList.contains("reg-check")) _updateSelCountReg();
@@ -468,80 +467,6 @@ $("#btnDeleteAllReg").addEventListener("click", async () => {
   } catch (e) {
     $("#exportResult").textContent = "❌ " + e.message;
     $("#exportResult").className = "result bad";
-  }
-});
-
-$("#btnBulkRefetchRt").addEventListener("click", async () => {
-  const emails = _selectedRegEmails();
-  if (!emails.length) return;
-  if (!confirm(`对选中的 ${emails.length} 个号串行重走 Codex OAuth 拿 refresh_token？\n已有 RT 的号会自动跳过；缺 RT 的号每个 ~10s`)) return;
-  $("#exportResult").textContent = `处理中 0/${emails.length}...`;
-  $("#exportResult").className = "result";
-  const proxy = $("#regProxy").value.trim();
-  try {
-    const r = await api("/api/registered/bulk_refetch_rt", {
-      method: "POST",
-      body: JSON.stringify({ emails, proxy, force: false }),
-    });
-    $("#exportResult").textContent = `✅ 完成: 新拿到 ${r.newly_got || 0} 个 / 跳过 ${r.skipped || 0} 个 / 失败 ${r.total - r.succeeded} 个`;
-    $("#exportResult").className = "result ok";
-    for (const item of r.results || []) {
-      if (item.skipped) {
-        logLine(`[refetch] ⏭️  ${item.email} 已有 RT (len=${item.refresh_token_len})`, "evt");
-      } else if (item.ok) {
-        logLine(`[refetch] ✅ ${item.email} RT len=${item.refresh_token_len}`, "ok");
-      } else {
-        logLine(`[refetch] ❌ ${item.email}: ${item.error || "失败"}`, "err");
-      }
-    }
-    _credCache = null;
-    refreshRegistered();
-  } catch (e) {
-    $("#exportResult").textContent = "❌ " + e.message;
-    $("#exportResult").className = "result bad";
-  }
-});
-
-$("#btnExportAll").addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  const orig = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "⏳ 导出中...";
-  $("#exportResult").textContent = "";
-  $("#exportResult").className = "result";
-  try {
-    const resp = await fetch("/api/registered/export?limit=10000");
-    if (!resp.ok) {
-      const e = await resp.json().catch(() => ({}));
-      throw new Error(e.detail || resp.statusText);
-    }
-    const count = parseInt(resp.headers.get("X-Account-Count") || "0", 10);
-    if (!count) {
-      $("#exportResult").textContent = "❌ 没有可导出的注册结果";
-      $("#exportResult").className = "result bad";
-      return;
-    }
-    const blob = await resp.blob();
-    // 取后端给的文件名（attachment; filename="..."）
-    const dispo = resp.headers.get("Content-Disposition") || "";
-    const m = dispo.match(/filename="([^"]+)"/);
-    const fname = m ? m[1] : `gpt-accounts-${Date.now()}.zip`;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fname;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    $("#exportResult").textContent = `✅ 已下载 ${count} 个号的 ZIP 包`;
-    $("#exportResult").className = "result ok";
-  } catch (err) {
-    $("#exportResult").textContent = "❌ " + err.message;
-    $("#exportResult").className = "result bad";
-  } finally {
-    btn.disabled = false;
-    btn.textContent = orig;
   }
 });
 
@@ -603,46 +528,6 @@ $("#regTable").addEventListener("click", async (e) => {
       await api(`/api/registered/${encodeURIComponent(email)}`, { method: "DELETE" });
       refreshRegistered();
     } catch (err) { alert("删除失败: " + err.message); }
-  }
-
-  // 「🔑 RT」单行重拿 refresh_token
-  if (btn.dataset.act === "refetch_rt") {
-    const orig = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = "⏳";
-    try {
-      const proxy = $("#regProxy").value.trim();
-      // 第一次 force=false：已有 RT 会跳过
-      let r = await api("/api/registered/refetch_rt", {
-        method: "POST",
-        body: JSON.stringify({ email, proxy, force: false }),
-      });
-      if (r.skipped) {
-        // 已有 RT，询问是否强制覆盖
-        const ok = confirm(`${email} 已有 refresh_token (len=${r.refresh_token_len})\n是否强制重新拿一次覆盖？（一般不需要）`);
-        if (!ok) {
-          logLine(`[refetch] ⏭️  ${email} 已有 RT，跳过`, "evt");
-          return;
-        }
-        r = await api("/api/registered/refetch_rt", {
-          method: "POST",
-          body: JSON.stringify({ email, proxy, force: true }),
-        });
-      }
-      if (r.ok) {
-        logLine(`[refetch] ✅ ${email} 拿到 RT (len=${r.refresh_token_len})`, "ok");
-        if (_credCache && _credCache.email === email) _credCache = null;
-        refreshRegistered();
-      } else {
-        logLine(`[refetch] ❌ ${email}: ${r.error}`, "err");
-        alert("失败: " + r.error);
-      }
-    } catch (err) {
-      alert("失败: " + err.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = orig;
-    }
   }
 });
 
@@ -1078,7 +963,6 @@ async function loadSmsConfig() {
     _renderSmsAllowedCountriesBox(config.sms_allowed_countries || "");
     $("#smsMaxPhoneAttempts").value = config.sms_max_phone_attempts || "";
     $("#smsPerPhoneTimeout").value = config.sms_per_phone_timeout || "80";
-    $("#smsProxy").value = config.sms_proxy || "";
   } catch (e) {
     console.error("loadSmsConfig:", e);
   }
@@ -1108,7 +992,6 @@ $("#btnSaveSmsCfg").addEventListener("click", async () => {
     sms_auto_max_price:    $("#smsAutoMaxPrice").value.trim(),
     sms_max_phone_attempts: $("#smsMaxPhoneAttempts").value.trim(),
     sms_per_phone_timeout: $("#smsPerPhoneTimeout").value.trim() || "80",
-    sms_proxy:             $("#smsProxy").value.trim(),
   };
   try {
     await api("/api/settings/sms", { method: "POST", body: JSON.stringify(body) });
@@ -1138,6 +1021,88 @@ $("#btnTestSms").addEventListener("click", async (e) => {
     btn.disabled = false;
     btn.textContent = "🔌 测试余额";
   }
+});
+
+// ──────────────────────── 📤 自动导出配置 (CPA / SUB2API) ────────────────────────
+
+async function loadExportConfig() {
+  try {
+    const { config } = await api("/api/settings/export");
+    // CPA
+    $("#cpaEnabled").checked = config.cpa_enabled === "1";
+    $("#cpaUrl").value = config.cpa_url || "";
+    $("#cpaMgmtKey").value = "";
+    $("#cpaMgmtKey").placeholder = config.cpa_mgmt_key === "***"
+      ? "已设置（留空不修改）"
+      : "粘贴 CPA 管理密钥";
+    $("#cpaTimeout").value = config.cpa_timeout || "30";
+    // SUB2API
+    $("#sub2apiEnabled").checked = config.sub2api_enabled === "1";
+    $("#sub2apiUrl").value = config.sub2api_url || "";
+    $("#sub2apiApiKey").value = "";
+    $("#sub2apiApiKey").placeholder = config.sub2api_api_key === "***"
+      ? "已设置（留空不修改）"
+      : "粘贴面板里生成的 x-api-key";
+    $("#sub2apiGroupIds").value = config.sub2api_group_ids || "2";
+    $("#sub2apiTimeout").value = config.sub2api_timeout || "30";
+  } catch (e) {
+    console.error("loadExportConfig:", e);
+  }
+}
+
+$("#btnSaveExportCfg").addEventListener("click", async () => {
+  const cpaKeyInput = $("#cpaMgmtKey").value.trim();
+  const sub2apiKeyInput = $("#sub2apiApiKey").value.trim();
+  const body = {
+    // CPA
+    cpa_enabled:  $("#cpaEnabled").checked ? "1" : "0",
+    cpa_url:      $("#cpaUrl").value.trim(),
+    cpa_mgmt_key: cpaKeyInput || "***",
+    cpa_timeout:  $("#cpaTimeout").value.trim() || "30",
+    // SUB2API
+    sub2api_enabled:    $("#sub2apiEnabled").checked ? "1" : "0",
+    sub2api_url:        $("#sub2apiUrl").value.trim(),
+    sub2api_api_key:    sub2apiKeyInput || "***",
+    sub2api_group_ids:  $("#sub2apiGroupIds").value.trim() || "2",
+    sub2api_timeout:    $("#sub2apiTimeout").value.trim() || "30",
+  };
+  try {
+    await api("/api/settings/export", { method: "POST", body: JSON.stringify(body) });
+    $("#exportCfgResult").textContent = "✅ 保存成功";
+    $("#exportCfgResult").className = "result ok";
+    setTimeout(loadExportConfig, 300);
+  } catch (e) {
+    $("#exportCfgResult").textContent = "❌ " + e.message;
+    $("#exportCfgResult").className = "result bad";
+  }
+  setTimeout(() => { $("#exportCfgResult").textContent = ""; }, 3500);
+});
+
+async function _testExportTarget(target, btn, resultEl, origText) {
+  btn.disabled = true;
+  btn.textContent = "⏳ 测试中...";
+  resultEl.textContent = "";
+  try {
+    const r = await api("/api/settings/export/test", {
+      method: "POST",
+      body: JSON.stringify({ target }),
+    });
+    resultEl.textContent = "✅ " + (r.message || "连通正常");
+    resultEl.className = "result ok";
+  } catch (e) {
+    resultEl.textContent = "❌ " + e.message;
+    resultEl.className = "result bad";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+$("#btnTestCpa").addEventListener("click", (e) => {
+  _testExportTarget("cpa", e.currentTarget, $("#cpaTestResult"), "🔌 测试 CPA 连通性");
+});
+$("#btnTestSub2api").addEventListener("click", (e) => {
+  _testExportTarget("sub2api", e.currentTarget, $("#sub2apiTestResult"), "🔌 测试 SUB2API 连通性");
 });
 
 // ──────────────────────── 启动 ────────────────────────
